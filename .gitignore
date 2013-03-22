@@ -1,0 +1,15 @@
+*.class
+*.pyc
+build/
+bin/
+lib/swt.jar
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+# Mac OS X Files #
+.DS_Store
+._*
+

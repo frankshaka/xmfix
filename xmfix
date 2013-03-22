@@ -1,0 +1,255 @@
+#!/usr/bin/env python
+
+__version__ = "0.0.1"
+__author__ = "Frank Shaka"
+
+import sys
+import os
+import os.path
+import zipfile
+import subprocess
+import traceback
+
+class ZipSource(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def __enter__(self):
+        self._zipfile = zipfile.ZipFile(self.file_path, "r")
+        return self
+
+    def __exit__(self, exc_type, exception, traceback):
+        self._zipfile.close()
+        self._zipfile = None
+
+    def entries(self):
+        if not hasattr(self, "_zipfile"):
+            raise KeyError("Should use 'with' before calling this function.")
+        for zipinfo in self._zipfile.infolist():
+            yield zipinfo.filename
+
+    def read(self, entry_name):
+        if not hasattr(self, "_zipfile"):
+            raise KeyError("Should use 'with' before calling this function.")
+        return self._zipfile.read(entry_name)
+
+
+class DirSource(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exception, traceback):
+        pass
+
+    def entries(self):
+        return self._walk(self.file_path, "")
+
+    def _walk(self, parent, base):
+        for name in os.listdir(parent):
+            path = os.path.join(parent, name)
+            entry = os.path.join(base, name)
+            if os.path.isdir(path):
+                yield entry + "/"
+                for subentry in self._walk(path, entry):
+                    yield subentry
+            else:
+                yield entry
+
+    def read(self, entry_name):
+        if entry_name.endswith("/"):
+            return ""
+        with open(os.path.join(self.file_path, entry_name), "r") as f:
+            return f.read()
+
+
+class ZipTarget(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def __enter__(self):
+        self._zipfile = zipfile.ZipFile(self.file_path, "w")
+        return self
+
+    def __exit__(self, exc_type, exception, traceback):
+        self._zipfile.close()
+        self._zipfile = None
+
+    def write(self, entry_name, content):
+        if not hasattr(self, "_zipfile"):
+            raise KeyError("Should use 'with' before calling this function.")
+        self._zipfile.writestr(entry_name, content)
+
+
+class DirTarget(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def __enter__(self):
+        ensure_dir(self.file_path)
+        return self
+
+    def __exit__(self, exc_type, exception, traceback):
+        pass
+
+    def write(self, entry_name, content):
+        path = os.path.join(self.file_path, entry_name)
+        if not ensure_dir(os.dirname(path)):
+            raise IOError("Directory can not be created to write file: " + path)
+        if entry_name.endswith("/"):
+            os.mkdir(path)
+        else:
+            with open(path, "w") as f:
+                f.write(content)
+
+
+def ensure_dir(dirpath):
+    if os.path.isdir(dirpath):
+        return True
+    (parent, name) = os.path.split(dirpath)
+    if parent:
+        ensure_dir(parent)
+    if not os.path.isdir(parent):
+        return False
+    os.mkdir(dirpath)
+    return os.path.isdir(dirpath)
+
+
+def remove_all(file_path):
+    if os.path.isdir(file_path):
+        for name in os.listdir(file_path):
+            remove_all(os.path.join(file_path, name))
+        os.rmdir(file_path)
+    else:
+        os.remove(file_path)
+
+
+def fixmanifest(source_file, target_file=None):
+    print "Fixing manifest: %s" % source_file
+
+    if not target_file:
+        target_file = "." + os.path.splitext(source_file)[0] + "_manifestfixed.xmind"
+
+    try:
+        manifest = ""
+
+        with DirSource(source_file) if os.path.isdir(source_file) else ZipSource(source_file) as source:
+            with ZipTarget(target_file) as target:
+                for entry in source.entries():
+                    print "Reading entry: %s" % entry
+                    content = source.read(entry)
+                    # Skip empty files to prevent XMind from failing to parse XML:
+                    if content or not entry.lower().endswith(".xml"):
+                        manifest += '<file-entry full-path="%s" media-type=""/>' % entry
+                        target.write(entry, content)
+                    else:
+                        print "WARNING: Empty entry skipped: %s" % entry
+                target.write("META-INF/", "")
+                target.write("META-INF/manifest.xml", '<?xml version="1.0" encoding="UTF-8" standalone="no"?><manifest xmlns="urn:xmind:xmap:xmlns:manifest:1.0">' + manifest + '<file-entry full-path="META-INF/" media-type=""/><file-entry full-path="META-INF/manifest.xml" media-type="text/xml"/></manifest>')
+
+        print "Saved to new file: %s" % target_file
+        return target_file
+    except:
+        remove_all(target_file)
+        raise
+
+
+def fixbadzip(source_file, unzip=True):
+    print "Fixing bad ZIP: %s" % source_file
+
+    recovered_file = "." + os.path.splitext(source_file)[0] + "_recovered.zip"
+    subprocess.check_call(["zip", "-FF", source_file, "--out", recovered_file])
+    print "ZIP fixed: %s" % recovered_file
+    
+    print ""
+    print "Extracting ZIP archive from '%s'..." % recovered_file
+    unzipped_dir = "." + os.path.splitext(source_file)[0] + "_recovered"
+    ensure_dir(unzipped_dir)
+    exitcode = subprocess.call(["unzip", recovered_file, "-d", unzipped_dir])
+    print "ZIP extracted: [exitcode=%s] %s" % (exitcode, unzipped_dir)
+    
+    if unzip:
+        remove_all(recovered_file)
+        return unzipped_dir
+    
+    print ""
+    print "Archiving ZIP file from '%s'..." % unzipped_dir
+    remove_all(recovered_file)
+    subprocess.check_call(["zip", recovered_file, "."], cwd=unzipped_dir)
+    print "ZIP archived: %s" % recovered_file
+    remove_all(unzipped_dir)
+    return recovered_file
+
+
+def fix(file_path):
+    try:
+        unzipped_dir = fixbadzip(file_path, unzip=True)
+        try:
+            return fixmanifest(unzipped_dir)
+        finally:
+            remove_all(unzipped_dir)
+    except:
+        print traceback.format_exc()
+        return None
+
+
+def mark_fixed(source_file, fixed_file):
+    prefix = os.path.splitext(source_file)[0]
+    target_file = prefix + "_fixed.xmind"
+    index = 1
+    while os.path.lexists(target_file):
+        index += 1
+        target_file = prefix + ("_fixed (%s).xmind" % index)
+    os.rename(fixed_file, target_file)
+    return target_file
+
+
+def print_help():
+    print "A utility to fix damaged XMind files."
+    print "Usage: xmfix [OPTIONS] FILE_PATH [FILE_PATH2] ..."
+    print "FILE_PATH may be an intended XMind file, or a directory containing XMind file components."
+    print "Available options:"
+    print "  --help       Print this help and exit"
+    print ""
+
+
+def main():
+    files = []
+    options = {}
+    
+    for arg in sys.argv[1:]:
+        if arg[0:2] == "--":
+            k, _, v = arg[2:].partition("=")
+            options[k] = v
+        else:
+            files.append(arg)
+    
+    if not files or "help" in options:
+        print_help()
+        sys.exit(1)
+
+    fixed_files = []
+    failed_files = []
+    for file_path in files:
+        fixed_file = fix(file_path)
+        if fixed_file:
+            fixed_files.append(mark_fixed(fixed_file))
+        else:
+            failed_files.append(file_path)
+    print ""
+    print "Total %s files, %s fixed, %s failed." % (len(files), len(fixed_files), len(failed_files))
+    if fixed_files:
+        print ""
+        print "Fixed files:"
+        for file_path in fixed_files:
+            print "    " + file_path
+    if failed_files:
+        print ""
+        print "Failed files:"
+        for file_path in failed_files:
+            print "    " + file_path
+
+if __name__ == "__main__":
+    main()

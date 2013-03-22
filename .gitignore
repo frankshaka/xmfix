@@ -1,13 +1,11 @@
 *.class
-*.pyc
 build/
 bin/
-lib/swt.jar
+dist/
+xmfix.egg-info/
 
 # Package Files #
-*.jar
-*.war
-*.ear
+*.pyc
 
 # Mac OS X Files #
 .DS_Store

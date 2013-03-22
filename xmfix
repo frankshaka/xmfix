@@ -185,11 +185,14 @@ def fixbadzip(source_file, unzip=True):
 
 def fix(file_path):
     try:
-        unzipped_dir = fixbadzip(file_path, unzip=True)
-        try:
-            return fixmanifest(unzipped_dir)
-        finally:
-            remove_all(unzipped_dir)
+        if os.path.isdir(file_path):
+            return fixmanifest(file_path)
+        else:
+            unzipped_dir = fixbadzip(file_path, unzip=True)
+            try:
+                return fixmanifest(unzipped_dir)
+            finally:
+                remove_all(unzipped_dir)
     except:
         print traceback.format_exc()
         return None
@@ -208,8 +211,11 @@ def mark_fixed(source_file, fixed_file):
 
 def print_help():
     print "A utility to fix damaged XMind files."
+    print ""
     print "Usage: xmfix [OPTIONS] FILE_PATH [FILE_PATH2] ..."
+    print ""
     print "FILE_PATH may be an intended XMind file, or a directory containing XMind file components."
+    print ""
     print "Available options:"
     print "  --help       Print this help and exit"
     print ""

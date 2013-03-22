@@ -126,11 +126,15 @@ def remove_all(file_path):
         os.remove(file_path)
 
 
+def add_dot_prefix(path):
+    return path if path.startswith(".") else "." + path
+
+
 def fixmanifest(source_file, target_file=None):
     print "Fixing manifest: %s" % source_file
 
     if not target_file:
-        target_file = "." + os.path.splitext(source_file)[0] + "_manifestfixed.xmind"
+        target_file = add_dot_prefix(os.path.splitext(source_file)[0] + "_manifestfixed.xmind")
 
     try:
         manifest = ""
@@ -159,13 +163,13 @@ def fixmanifest(source_file, target_file=None):
 def fixbadzip(source_file, unzip=True):
     print "Fixing bad ZIP: %s" % source_file
 
-    recovered_file = "." + os.path.splitext(source_file)[0] + "_recovered.zip"
+    recovered_file = add_dot_prefix(os.path.splitext(source_file)[0] + "_recovered.zip")
     subprocess.check_call(["zip", "-FF", source_file, "--out", recovered_file])
     print "ZIP fixed: %s" % recovered_file
     
     print ""
     print "Extracting ZIP archive from '%s'..." % recovered_file
-    unzipped_dir = "." + os.path.splitext(source_file)[0] + "_recovered"
+    unzipped_dir = add_dot_prefix(os.path.splitext(source_file)[0] + "_recovered")
     ensure_dir(unzipped_dir)
     exitcode = subprocess.call(["unzip", recovered_file, "-d", unzipped_dir])
     print "ZIP extracted: [exitcode=%s] %s" % (exitcode, unzipped_dir)
@@ -241,7 +245,7 @@ def main():
     for file_path in files:
         fixed_file = fix(file_path)
         if fixed_file:
-            fixed_files.append(mark_fixed(fixed_file))
+            fixed_files.append(mark_fixed(file_path, fixed_file))
         else:
             failed_files.append(file_path)
     print ""

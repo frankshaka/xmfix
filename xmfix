@@ -131,7 +131,7 @@ def add_dot_prefix(path):
 
 
 def fixmanifest(source_file, target_file=None):
-    print "Fixing manifest: %s" % source_file
+    print "[xmfix] Fixing manifest: %s" % source_file
 
     if not target_file:
         target_file = add_dot_prefix(os.path.splitext(source_file)[0] + "_manifestfixed.xmind")
@@ -142,18 +142,18 @@ def fixmanifest(source_file, target_file=None):
         with DirSource(source_file) if os.path.isdir(source_file) else ZipSource(source_file) as source:
             with ZipTarget(target_file) as target:
                 for entry in source.entries():
-                    print "Reading entry: %s" % entry
+                    print "[xmfix] Reading entry: %s" % entry
                     content = source.read(entry)
                     # Skip empty files to prevent XMind from failing to parse XML:
                     if content or not entry.lower().endswith(".xml"):
                         manifest += '<file-entry full-path="%s" media-type=""/>' % entry
                         target.write(entry, content)
                     else:
-                        print "WARNING: Empty entry skipped: %s" % entry
+                        print "[xmfix] WARNING: Empty entry skipped: %s" % entry
                 target.write("META-INF/", "")
                 target.write("META-INF/manifest.xml", '<?xml version="1.0" encoding="UTF-8" standalone="no"?><manifest xmlns="urn:xmind:xmap:xmlns:manifest:1.0">' + manifest + '<file-entry full-path="META-INF/" media-type=""/><file-entry full-path="META-INF/manifest.xml" media-type="text/xml"/></manifest>')
 
-        print "Saved to new file: %s" % target_file
+        print "[xmfix] Saved to new file: %s" % target_file
         return target_file
     except:
         remove_all(target_file)
@@ -161,28 +161,39 @@ def fixmanifest(source_file, target_file=None):
 
 
 def fixbadzip(source_file, unzip=True):
-    print "Fixing bad ZIP: %s" % source_file
+    print "[xmfix] Fixing bad ZIP: %s" % source_file
 
     recovered_file = add_dot_prefix(os.path.splitext(source_file)[0] + "_recovered.zip")
     subprocess.check_call(["zip", "-FF", source_file, "--out", recovered_file])
-    print "ZIP fixed: %s" % recovered_file
+    print "[xmfix] ZIP fixed: %s" % recovered_file
     
-    print ""
-    print "Extracting ZIP archive from '%s'..." % recovered_file
     unzipped_dir = add_dot_prefix(os.path.splitext(source_file)[0] + "_recovered")
-    ensure_dir(unzipped_dir)
-    exitcode = subprocess.call(["unzip", recovered_file, "-d", unzipped_dir])
-    print "ZIP extracted: [exitcode=%s] %s" % (exitcode, unzipped_dir)
+    while 1:
+        print ""
+        print "[xmfix] Extracting ZIP archive from '%s'..." % recovered_file
+        ensure_dir(unzipped_dir)
+        exitcode = subprocess.call(["unzip", recovered_file, "-d", unzipped_dir])
+        print "[xmfix] ZIP extracted: [exitcode=%s] %s" % (exitcode, unzipped_dir)
+        
+        if exitcode == 0:
+            break
+        
+        print ""
+        print "[xmfix] Force fixing ZIP file: %s" % recovered_file
+        force_recovered_file = os.path.splitext(recovered_file)[0] + "_force.zip"
+        subprocess.check_call(["zip", "-FF", recovered_file, "--out", force_recovered_file])
+        print "[xmfix] ZIP fixed: %s" % force_recovered_file
+        os.rename(force_recovered_file, recovered_file)
     
     if unzip:
         remove_all(recovered_file)
         return unzipped_dir
     
     print ""
-    print "Archiving ZIP file from '%s'..." % unzipped_dir
+    print "[xmfix] Archiving ZIP file from '%s'..." % unzipped_dir
     remove_all(recovered_file)
     subprocess.check_call(["zip", recovered_file, "."], cwd=unzipped_dir)
-    print "ZIP archived: %s" % recovered_file
+    print "[xmfix] ZIP archived: %s" % recovered_file
     remove_all(unzipped_dir)
     return recovered_file
 
@@ -249,17 +260,17 @@ def main():
         else:
             failed_files.append(file_path)
     print ""
-    print "Total %s files, %s fixed, %s failed." % (len(files), len(fixed_files), len(failed_files))
+    print "[xmfix] Total %s files, %s fixed, %s failed." % (len(files), len(fixed_files), len(failed_files))
     if fixed_files:
         print ""
-        print "Fixed files:"
+        print "[xmfix] Fixed files:"
         for file_path in fixed_files:
-            print "    " + file_path
+            print "[xmfix]     " + file_path
     if failed_files:
         print ""
-        print "Failed files:"
+        print "[xmfix] Failed files:"
         for file_path in failed_files:
-            print "    " + file_path
+            print "[xmfix]     " + file_path
 
 if __name__ == "__main__":
     main()

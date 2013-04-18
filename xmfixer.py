@@ -58,15 +58,16 @@ class DirSource(object):
         return self._walk(self.file_path, "")
 
     def _walk(self, parent, base):
-        for name in os.listdir(parent):
-            path = os.path.join(parent, name)
-            entry = os.path.join(base, name)
-            if os.path.isdir(path):
-                yield entry + "/"
-                for subentry in self._walk(path, entry):
-                    yield subentry
-            else:
-                yield entry
+        if os.path.isdir(parent):
+            for name in os.listdir(parent):
+                path = os.path.join(parent, name)
+                entry = os.path.join(base, name)
+                if os.path.isdir(path):
+                    yield entry + "/"
+                    for subentry in self._walk(path, entry):
+                        yield subentry
+                else:
+                    yield entry
 
     def read(self, entry_name):
         if entry_name.endswith("/"):
@@ -215,29 +216,31 @@ class XMindFileFixer(object):
         
         sheets = []
         revisions_dir = os.path.join(self.unzipped_dir, "Revisions")
-        for sheet_id in os.listdir(revisions_dir):
-            revision_dir = os.path.join(revisions_dir, sheet_id)
-            revision = -1
-            sheet = None
-            revision_file = None
-            for rev_file_name in os.listdir(revision_dir):
-                m = revision_file_pattern.match(rev_file_name)
-                if m:
-                    rev = int(m.group(1))
-                    if rev > revision:
-                        revision_file = os.path.join(revision_dir, rev_file_name)
-                        try:
-                            with open(revision_file, "r") as rf:
-                                revision_content = rf.read()
-                            m = revision_content_pattern.search(revision_content)
-                            if m:
-                                sheet = m.group(1)
-                                revision = rev
-                        except:
-                            logging.warning("[xmfix] Failed to load revision: %s", revision_file)
-            if sheet:
-                sheets.append(sheet)
-                logging.info("[xmfix] Sheet recovered: %s", revision_file)
+        if os.path.isdir(revisions_dir):
+            for sheet_id in os.listdir(revisions_dir):
+                revision_dir = os.path.join(revisions_dir, sheet_id)
+                if os.path.isdir(revision_dir):
+                    revision = -1
+                    sheet = None
+                    revision_file = None
+                    for rev_file_name in os.listdir(revision_dir):
+                        m = revision_file_pattern.match(rev_file_name)
+                        if m:
+                            rev = int(m.group(1))
+                            if rev > revision:
+                                revision_file = os.path.join(revision_dir, rev_file_name)
+                                try:
+                                    with open(revision_file, "r") as rf:
+                                        revision_content = rf.read()
+                                    m = revision_content_pattern.search(revision_content)
+                                    if m:
+                                        sheet = m.group(1)
+                                        revision = rev
+                                except:
+                                    logging.warning("[xmfix] Failed to load revision: %s", revision_file)
+                    if sheet:
+                        sheets.append(sheet)
+                        logging.info("[xmfix] Sheet recovered: %s", revision_file)
         if sheets:
             content = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
                 '<xmap-content xmlns="urn:xmind:xmap:xmlns:content:2.0" '
